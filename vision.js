@@ -21,7 +21,7 @@ try { require("dotenv").config(); } catch {}
 try { require("dotenv").config({ path: path.resolve(__dirname, ".env") }); } catch {}
 
 const BASE_URL = process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const API_KEY = process.env.DASHSCOPE_API_KEY || "sk-ed60c56f59b7428c89986d3db8d4e240";
+const API_KEY = process.env.DASHSCOPE_API_KEY || ""; // 在 .env 文件或环境变量中设置
 const MODEL = process.env.VISION_MODEL || "qwen-vl-max";
 
 function parseArgs() {
