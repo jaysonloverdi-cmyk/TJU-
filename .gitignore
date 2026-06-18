@@ -1,0 +1,65 @@
+# 军理搜题工作流 — Git 忽略规则
+
+# 缓存数据库
+cache.db
+
+# 临时文件目录
+temp/
+
+# 日志
+error.log
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# OCR 临时结果
+_ocr_*.json
+_results_*.json
+_new_qs.json
+_retry_result.json
+*_bank*.txt
+_answer_bank*.txt
+_bank_v*.txt
+_tb_*.txt
+_test2_v*.txt
+
+# 临时标记文件
+tmp_*.txt
+tmp_*.json
+tmp_p*.txt
+
+# API Key（防止泄露）
+config.yaml
+
+# 测试数据（含试卷图片，体积大）
+测试1/
+测试2/
+测试3/
+测试4/
+*.jpg
+*.jpeg
+*.png
+*.bmp
+
+# 答案输出
+*答案.md
+
+# 教科书/题库（版权内容）
+考试参考.md
+军理题库_本地.txt
+军理期末答案（题库）(完整版).doc
+~$*.doc
+
+# Obsidian
+.obsidian/workspace*.json
+.trash/
+
+# Claude
+.claude/
+test_temp_cache.db

@@ -1,0 +1,17 @@
+# 军理搜题工作流 — 配置文件模板
+# 复制为 config.yaml 并填入你的信息
+
+course: 军理
+api_key: ""          # 必填：itihey API Key 或设环境变量 ITIHEY_KEY
+textbook: 考试参考.md
+local_bank: 军理题库_本地.txt
+output_dir: ./
+cache_db: cache.db
+temp_dir: temp/
+ocr_lang: ch_sim
+ocr_gpu: true
+retry_max: 3
+retry_delay_base: 1.0
+output_format: markdown
+log_file: error.log
+keep_recent: 3
