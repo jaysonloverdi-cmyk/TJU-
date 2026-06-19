@@ -90,15 +90,49 @@ def parse_md_answers(filepath):
             if q not in answers:
                 answers[q] = [ans] if len(ans) == 1 else list(ans)
 
-    # 豆包 single-line format: all content on one line
-    if len(answers) < 10:  # Probably single-line format
-        # Split by | |  patterns
-        for part in re.split(r'\|\s*\|', text):
-            dm = re.search(r'Q(\d+)\s*\|\s*([A-E对错]+)', part)
+        # DeepSeek v1: **Q1. ...** then - **答案：A**
+        # DeepSeek v2: **Q1** D. xxx (answer inline after **QN**)
+        ds = re.match(r'\*\*Q(\d+)\*\*\s*([A-E对错]{1,5})\.?\s', line)
+        if ds:
+            q = int(ds.group(1))
+            ans = ds.group(2).replace('正确','对').replace('错误','错')
+            if q not in answers:
+                answers[q] = [ans] if len(ans) == 1 else list(ans)
+            continue
+        ds = re.match(r'\*\*Q(\d+)\.?\s', line)
+        if ds:
+            current_q = int(ds.group(1))
+            continue
+        if current_q and re.search(r'\*\*答案[：:]\s*([A-E对错]{1,5})', line):
+            ans_m = re.search(r'\*\*答案[：:]\s*([A-E对错]{1,5})', line)
+            ans = ans_m.group(1).replace('正确','对').replace('错误','错')
+            if current_q not in answers:
+                answers[current_q] = [ans] if len(ans) == 1 else list(ans)
+
+        # 豆包 inline: ### Q1 **答案：C** or ### Q1 **答案**：C
+        db = re.match(r'### Q(\d+).*?\*\*答案\*?\*?\s*[：:]\s*([A-E对错]{1,5})', line)
+        if db:
+            q = int(db.group(1))
+            ans = db.group(2).replace('正确','对').replace('错误','错')
+            if q not in answers:
+                answers[q] = [ans] if len(ans) == 1 else list(ans)
+
+        # 豆包 v3: **Q1**：答案选D
+        db3 = re.match(r'\*\*Q(\d+)\*\*[：:].*答案[选为是].*?([A-E对错]{1,5})', line)
+        if db3:
+            q = int(db3.group(1))
+            ans = db3.group(2).replace('正确','对').replace('错误','错')
+            if q not in answers:
+                answers[q] = [ans] if len(ans) == 1 else list(ans)
+
+    # 豆包 single-line format: all content on one line (### Q1 **答案：C** ...)
+    if len(answers) < 10:
+        for part in re.split(r'(?=### Q\d+)', text):
+            dm = re.search(r'(?:### Q(\d+)|Q(\d+)).*?答案[选为是]?\s*[：:\.]?\s*([A-E对错]{1,5})', part)
             if dm:
-                q = int(dm.group(1))
-                ans = dm.group(2).replace('正确','对').replace('错误','错')
-                if q not in answers:
+                q = int(dm.group(1) or dm.group(2))
+                ans = (dm.group(3) or '').replace('正确','对').replace('错误','错')
+                if ans and q not in answers:
                     answers[q] = [ans] if len(ans) == 1 else list(ans)
 
     # 管道表格格式
@@ -137,6 +171,14 @@ def parse_md_answers(filepath):
                 ver = parts[7] if len(parts) > 7 else ''
                 answers[q] = {'text': ans, 'source': src, 'verify': ver}
 
+    # 暴力兜底：全文中 QN ... 答案/选 ... 字母
+    if len(answers) < 15:
+        for m in re.finditer(r'Q(\d+).*?[答案选为].*?([A-E对错]{1,5})', text):
+            q = int(m.group(1))
+            if q not in answers:
+                ans = m.group(2).replace('正确','对').replace('错误','错')
+                answers[q] = [ans] if len(ans) == 1 else list(ans)
+
     return answers
 
 
@@ -163,7 +205,7 @@ def load_options(test_path):
             review = c
             break
     if not review:
-        return {}
+        return {}, {}
     text = review.read_text(encoding='utf-8')
     opts = {}
     qtexts = {}
@@ -246,11 +288,14 @@ def crosscheck(test_dir, config=None):
             sources['pipeline'] = parse_md_answers(str(pf))
             break
 
-    # AI 答案（可能在测试目录或 vault 根，支持 *1.md 变体）
+    # AI 答案：AI回答/测试N XX.md 或 DeepSeek.md 等
     for name in ['DeepSeek', 'Gemini', '豆包']:
         found = False
-        # *1.md 优先（新测试），然后 * .md（旧测试）
-        for variant in [f'{name}1.md', f'{name}.md']:
+        for variant in [
+            f'AI回答/{test_path.name} {name}.md',
+            f'{test_path.name} {name}.md',
+            f'{name}1.md', f'{name}.md',
+        ]:
             for loc in [test_path / variant, vault_root / variant]:
                 if loc.exists():
                     sources[name] = parse_md_answers(str(loc))
@@ -433,7 +478,9 @@ def crosscheck(test_dir, config=None):
                             break
 
         source_label = f"题库({len(votes)}源)" if pipeline_vote else f"AI({len(ai_votes)}源)"
-        qlink = "[[题目校对#Q" + str(q) + "\\|Q" + str(q) + "]]"
+        # vault 内相对路径 (as_posix 去掉盘符)
+        rel_path = test_path.as_posix().replace('D:/Documents/25262/', '')
+        qlink = "[[" + rel_path + "/题目校对#Q" + str(q) + "\\|Q" + str(q) + "]]"
         dlink = "[[#Q" + str(q) + "-detail\\|说明]]"
         lines.append(f"| {qlink} | {answer} | {conf:.0%} | {judge} | {source_label} | ← | {dlink} |")
 
@@ -450,11 +497,18 @@ def crosscheck(test_dir, config=None):
         if any(w in qtext for w in negation_words) and pipeline_vote and ai_consensus and pipeline_vote != ai_consensus:
             judge = '🔴' if judge == '🟡' else judge
             details.append(f"> ⚠️ **否定题分歧**：题库与AI答案不同——题目含\"{'/'.join(w for w in negation_words if w in qtext)}\"，API可能答了反问题。请确认。\n")
-        # 本地题库参考标注
-        for ref in local_refs[:2]:
-            details.append(f"> 📋 本地题库：{ref}\n")
-        for ref in textbook_refs[:1]:
-            details.append(f"> 📖 课本参考：{ref}\n")
+        # 本地题库参考标注（🟡/🔴 时标注，无论有无都说明）
+        if judge != '🟢':
+            if local_refs:
+                for ref in local_refs[:2]:
+                    details.append(f"> 📋 本地题库：{ref}\n")
+            else:
+                details.append(f"> 📋 本地题库：未覆盖此题\n")
+            if textbook_refs:
+                for ref in textbook_refs[:1]:
+                    details.append(f"> 📖 课本参考：{ref}\n")
+            else:
+                details.append(f"> 📖 课本参考：未找到相关内容\n")
 
     lines.extend(details)
 
