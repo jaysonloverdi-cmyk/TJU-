@@ -319,8 +319,13 @@ def process_questions(questions, config, logger=None):
             )
 
             # 2. 兜底：本地题库 > 课本（优先级）
+            # 但如果 AI 答案已经匹配选项，跳过兜底（避免课本劣化答案）
             fb = None
-            if result.get("source") in ("AI", "未知"):
+            ans_match_opts = (
+                result.get("_option_matched")
+                or result.get("confidence", 0) >= 0.70
+            )
+            if result.get("source") in ("AI", "未知") and not ans_match_opts:
                 # 本地题库优先
                 if bank_path:
                     if logger:
@@ -336,6 +341,7 @@ def process_questions(questions, config, logger=None):
                 if fb:
                     result["source"] = fb["source"]
                     result["confidence"] = fb["confidence"]
+                    result["answer_string"] = [fb.get("answer", "(见上下文)")]
 
             # 3. 核验
             verification = verify_answer(q, result, fb)
