@@ -187,29 +187,29 @@ def normalize_vote(vote, qnum, options_map):
     # 已经是纯字母
     if re.match(r'^[A-E]+$', vote):
         return ''.join(sorted(vote))
-    # 文字答案 → 匹配选项文本 → 字母（取最长匹配）
-    # 去引号，避免 "爱国者" ≠ 爱国者
-    clean_vote = vote.strip('\"\'“”「」')
-    matches = []
+    # 文字答案 → 精确匹配选项文本 → 字母（绝不模糊）
+    clean_vote = vote.strip('\”\'””「」')
     for letter, text in sorted(opt_map.items()):
-        clean_text = text.strip('\"\'“”「」。，、 ')
-        if clean_text in clean_vote or clean_vote in clean_text:
-            matches.append((len(clean_text), letter))
-        elif len(clean_text) >= 8 and clean_text[:8] in clean_vote:
-            matches.append((len(clean_text[:8]), letter))
-    if matches:
-        # 取最长匹配作为基准，保留 >= 50% 长度的所有匹配
-        matches.sort(reverse=True)
-        best_len = matches[0][0]
-        letters = [m[1] for m in matches if m[0] >= best_len * 0.4 or m[0] >= 2]
+        clean_text = text.strip('\”\'””「」。，、 ')
+        if clean_text == clean_vote:
+            return letter  # 单选：精确匹配
+    # 多选：逗号分隔后逐项匹配
+    parts = [p.strip().strip('\”\'””「」') for p in vote.replace('，', ',').split(',')]
+    letters = []
+    for part in parts:
+        for letter, text in sorted(opt_map.items()):
+            if text.strip('\”\'””「」。，、 ') == part:
+                letters.append(letter)
+                break
+    if letters:
         return ''.join(sorted(letters))
     # 判断题
     if '对' in vote or '正确' in vote:
         return '对'
     if '错' in vote or '错误' in vote:
         return '错'
-    # 兜底：清理后返回
-    return vote.replace(', ', '').replace('，', '').replace(' ', '')[:20]
+    # 兜底
+    return vote[:20]
 
 
 def crosscheck(test_dir, config=None):
