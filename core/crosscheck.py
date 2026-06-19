@@ -276,6 +276,11 @@ def crosscheck(test_dir, config=None):
     # 2. 加载选项映射
     options_map, question_texts = load_options(test_path)
 
+    # 本地资源路径
+    wf_root = test_path.parent if test_path.name != '工作流' else test_path
+    bank_path = wf_root / 'wby题库.md'
+    textbook_path = wf_root / '考试参考.md'
+
     # 3. 逐题判定
     all_qs = set()
     for src in sources.values():
@@ -401,7 +406,28 @@ def crosscheck(test_dir, config=None):
             judge = '🔴'
             detail = "无有效答案源"
 
-        # 查本地题库：仅在有匹配时显示具体内容
+        # 查本地题库（wby + 课本）：仅作为参考标注
+        local_refs = []
+        if bank_path and bank_path.exists():
+            bank_text_local = bank_path.read_text(encoding='utf-8')
+            q_kws = re.findall(r'[一-鿿]{3,8}', question_texts.get(q, ''))
+            for kw in q_kws[:5]:
+                for line in bank_text_local.split('\n'):
+                    if kw in line and line.strip().startswith('*'):
+                        bold = re.findall(r'\*\*(.+?)\*\*', line)
+                        if bold and line.strip() not in local_refs:
+                            local_refs.append(line.strip().lstrip('* '))
+                            break
+        textbook_refs = []
+        if textbook_path and textbook_path.exists():
+            tb_text = textbook_path.read_text(encoding='utf-8')
+            for kw in q_kws[:3]:
+                idx = tb_text.find(kw)
+                if idx > 0:
+                    snippet = tb_text[max(0,idx-20):idx+100].replace('\n',' ')
+                    if len(snippet) > 20:
+                        textbook_refs.append(snippet[:120])
+                        break
 
         source_label = f"题库({len(votes)}源)" if pipeline_vote else f"AI({len(ai_votes)}源)"
         qlink = "[[题目校对#Q" + str(q) + "\\|Q" + str(q) + "]]"
@@ -421,10 +447,11 @@ def crosscheck(test_dir, config=None):
         if any(w in qtext for w in negation_words) and pipeline_vote and ai_consensus and pipeline_vote != ai_consensus:
             judge = '🔴' if judge == '🟡' else judge
             details.append(f"> ⚠️ **否定题分歧**：题库与AI答案不同——题目含\"{'/'.join(w for w in negation_words if w in qtext)}\"，API可能答了反问题。请确认。\n")
-        # 本地题库兜底验证（仅在 itihey 和 AI 均无答案时显示）
-        if not pipeline_vote and len(ai_values) < 2:
-            # TODO: 实现本地题库搜索
-            pass
+        # 本地题库参考标注
+        for ref in local_refs[:2]:
+            details.append(f"> 📋 本地题库：{ref}\n")
+        for ref in textbook_refs[:1]:
+            details.append(f"> 📖 课本参考：{ref}\n")
 
     lines.extend(details)
 
