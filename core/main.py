@@ -318,20 +318,20 @@ def process_questions(questions, config, logger=None):
                 api_key, qtext, options, qtype, cache=cache, logger=logger
             )
 
-            # 2. 兜底：课本 + 本地题库
+            # 2. 兜底：本地题库 > 课本（优先级）
             fb = None
             if result.get("source") in ("AI", "未知"):
-                if logger:
-                    logger.info("Q%d API 未命中题库，尝试课本兜底...", qnum)
+                # 本地题库优先
+                if bank_path:
+                    if logger:
+                        logger.info("Q%d API 未命中，尝试本地题库...", qnum)
+                    fb = search_local_bank(qtext, bank_path)
 
                 # 课本搜索
-                fb = search_textbook(qtext, textbook_path) if textbook_path else None
-
-                # 本地题库
-                if not fb and bank_path:
+                if not fb and textbook_path:
                     if logger:
-                        logger.info("Q%d 课本无结果，尝试本地题库...", qnum)
-                    fb = search_local_bank(qtext, bank_path)
+                        logger.info("Q%d 本地题库无结果，尝试课本...", qnum)
+                    fb = search_textbook(qtext, textbook_path)
 
                 if fb:
                     result["source"] = fb["source"]
