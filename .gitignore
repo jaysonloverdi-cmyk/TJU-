@@ -1,5 +1,10 @@
 # 军理搜题工作流 — Git 忽略规则
 
+# 含 Key 文件（本地用，不上传）
+CLAUDE.md
+config.yaml
+vision.js
+
 # 缓存数据库
 cache.db
 
