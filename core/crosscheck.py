@@ -400,7 +400,7 @@ def crosscheck(test_dir, config=None):
         # 查本地题库：仅在有匹配时显示具体内容
 
         source_label = f"题库({len(votes)}源)" if pipeline_vote else f"AI({len(ai_votes)}源)"
-        qlink = "[[题目校对#^Q" + str(q) + "\\|Q" + str(q) + "]]"
+        qlink = "[[题目校对#Q" + str(q) + "\\|Q" + str(q) + "]]"
         dlink = "[[#Q" + str(q) + "-detail\\|说明]]"
         lines.append(f"| {qlink} | {answer} | {conf:.0%} | {judge} | {source_label} | ← | {dlink} |")
 
