@@ -401,12 +401,7 @@ def crosscheck(test_dir, config=None):
             judge = '🔴'
             detail = "无有效答案源"
 
-        # 银行命中增强
-        bank_hit = False
-        for kw, ans_list in bank_answers.items():
-            if any(str(q) in kw for _ in [1]):  # 简化检查
-                bank_hit = True
-                break
+        # 查本地题库：仅在有匹配时显示具体内容
 
         source_label = f"题库({len(votes)}源)" if pipeline_vote else f"AI({len(ai_votes)}源)"
         qlink = "[[题目校对#^Q" + str(q) + "\\|Q" + str(q) + "]]"
@@ -418,9 +413,11 @@ def crosscheck(test_dir, config=None):
         if ai_votes:
             details.append(f"> AI投票: " + " | ".join(f"{k}={v}" for k, v in sorted(ai_votes.items())) + "\n")
         if pipeline_vote:
-            details.append(f"> Pipeline: {pipeline_vote} (来源: {sources.get('pipeline', {}).get(q, {}).get('source', '?') if isinstance(sources.get('pipeline', {}).get(q, {}), dict) else 'N/A'})\n")
-        if bank_hit:
-            details.append(f"> 📋 本地题库有相关条目\n")
+            details.append(f"> Pipeline: {pipeline_vote}\n")
+        # 本地题库兜底验证（仅在 itihey 和 AI 均无答案时显示）
+        if not pipeline_vote and len(ai_values) < 2:
+            # TODO: 实现本地题库搜索
+            pass
 
     lines.extend(details)
 
