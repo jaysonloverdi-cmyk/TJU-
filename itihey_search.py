@@ -34,6 +34,9 @@ try:
 except ImportError:
     _USE_CORE = False
 
+# ── 模块级常量（core 和 fallback 共用）─────────────────
+OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 # ── 内置降级实现（core/ 不可用时使用）─────────────────
 
 if not _USE_CORE:
@@ -42,7 +45,6 @@ if not _USE_CORE:
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
     API_URL = "https://platform.itihey.com/v1/search"
-    OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     PUNC_MAP = str.maketrans(
         "，。！？、；：""''　（）《》【】",
         ",.!?,;:""'' ()<>[]"
