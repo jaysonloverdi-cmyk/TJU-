@@ -100,8 +100,16 @@ class SearchCache:
 # ── 文本处理 ─────────────────────────────────────────
 
 def normalize(text):
-    """生成题目的多种模糊变体：标点替换 / 去非中文 / 去空括号 / 长片段"""
-    variants = [text]
+    """生成题目的多种模糊变体：标点替换 / 去非中文 / 去空括号 / 长片段
+    搜索优先级：去括号版 > 原文 > 其他变体（避免全角括号匹错题）
+    """
+    variants = []
+    # 0. 去空括号版优先（全角/半角括号问题：（）可能匹到不同题）
+    t0 = re.sub(r"[（(]\s*[）)]", "", text)
+    if t0 != text and len(t0) >= 4:
+        variants.append(t0)
+    # 1. 原文
+    variants.append(text)
     t = text.translate(PUNC_MAP)
     if t != text:
         variants.append(t)
@@ -116,9 +124,11 @@ def normalize(text):
     t3b = re.sub(r'_+', '', t3)
     if t3b != t3 and len(t3b) >= 4:
         variants.append(t3b)
-    t4 = re.sub(r"[（(]\s*[）)]", "", text)
-    if t4 != text:
-        variants.append(t4)
+    # 如果 t0 已经去括号了，t4 是重复的，跳过
+    if t0 == text:  # 原文没有括号才试这个
+        t4 = re.sub(r"[（(]\s*[）)]", "", text)
+        if t4 != text:
+            variants.append(t4)
     clean = re.sub(r"[^\w一-鿿]", "", text)
     clean = re.sub(r'_+', '', clean)
     for seg in sorted(re.findall(r"[一-鿿]{8,}", clean), key=len, reverse=True)[:2]:
@@ -308,13 +318,24 @@ def fuzzy_search(api_key, question, options=None, qtype=0,
             result["use_ai"] = False
             result["confidence"] = 0.85
             result["source"] = "题库"
+            result["_bank_matched"] = True
             return result
-        # 即使 API 标了 AI，如果答案带结构化标记（"答案：XXX\n解析：..."），
-        # 大概率是题库命中被误标
+        # 即使 API 标了 AI，如果答案带结构化标记且匹配选项 → 标题库
         if looks_structured and ans_text:
+            cleaned = ans_text
             result["use_ai"] = False
-            result["confidence"] = 0.85
+            result["_bank_matched"] = True
+            # 检查是否匹错题
+            if options and len(cleaned) > 10:
+                opt_match = any(o.strip() in cleaned or cleaned in o.strip() for o in options)
+                if not opt_match:
+                    result["_possible_mismatch"] = True
+                    result["_mismatch_detail"] = f"题库疑似匹配到其他题：{cleaned[:60]}"
+                    result["source"] = "匹错"
+                    result["confidence"] = 0.70
+                    return result
             result["source"] = "题库"
+            result["confidence"] = 0.85
             return result
         # 答案匹配选项：提置信度但不提前退出（让后续变体有机会命中更强信号）
         if options and is_valid:
@@ -326,6 +347,7 @@ def fuzzy_search(api_key, question, options=None, qtype=0,
                 result["_option_matched"] = True
             elif matched:
                 result["confidence"] = max(result.get("confidence", 0), 0.70)
+                result["_option_matched"] = True
 
         if best is None:
             best = result
@@ -370,10 +392,10 @@ def fuzzy_search(api_key, question, options=None, qtype=0,
         if "source" not in best:
             if best.get("use_ai") is False:
                 best["source"] = "题库"
-                best["confidence"] = 0.90
+                best["confidence"] = max(best.get("confidence", 0), 0.90)
             else:
                 best["source"] = "AI"
-                best["confidence"] = 0.60
+                best["confidence"] = max(best.get("confidence", 0), 0.60)
         if "confidence" not in best:
             best["confidence"] = 0.60 if best.get("use_ai", True) else 0.90
 

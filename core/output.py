@@ -139,6 +139,7 @@ def generate_main_table(questions, results):
             "题库": "题库", "cache": "题库",
             "课本": "课本", "本地题库": "本地题库",
             "AI": "AI", "未知": "未知",
+            "匹错": "⚠️匹错",
         }
         source_cell = source_labels.get(source, source)
 

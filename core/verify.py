@@ -57,7 +57,7 @@ def verify_answer(question, result, fallback_result=None):
     if qtype in (0, 1) and options:
         ans_texts = [a.strip() for a in ans_strings if a.strip()]
         if ans_texts:
-            opt_set = set(o.strip() for o in options)
+            opt_set = set(o.strip().strip('"\'""') for o in options)
             ans_set = set(ans_texts)
             matched = ans_set & opt_set
             if not matched:
@@ -66,6 +66,11 @@ def verify_answer(question, result, fallback_result=None):
             elif len(ans_texts) > len(options):
                 status = "⚠️"
                 reasons.append("答案数量超过选项数")
+
+    # 4.5 疑似匹错（search.py 标记了 _possible_mismatch）
+    if result.get("_possible_mismatch"):
+        status = "⚠️"
+        reasons.append(result.get("_mismatch_detail", "题库疑似匹配到其他题"))
 
     # 5. 长答案检测（可能是解释而非直接答案）
     if ans_strings:

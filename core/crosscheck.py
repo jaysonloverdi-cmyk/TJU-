@@ -23,13 +23,18 @@ from collections import Counter
 
 
 def parse_md_answers(filepath):
-    """从 Markdown 提取答案：支持 [x] 标记格式和 | 表格格式"""
+    """从 Markdown 提取答案。支持四种格式：
+    1. [x] 复选框格式
+    2. | Q1 | **E** | 表格格式
+    3. | Q1 | E | 简化表格
+    4. - **Q1 | 单选：E** Gemini 格式
+    """
     text = Path(filepath).read_text(encoding='utf-8')
     answers = {}
     current_q = None
 
     for line in text.split('\n'):
-        # [x] 标记格式
+        # [x] 格式
         m = re.match(r'### Q(\d+)', line)
         if m:
             current_q = int(m.group(1))
@@ -44,7 +49,59 @@ def parse_md_answers(filepath):
             if re.search(r'\[x\]\s*错', line):
                 answers[current_q] = ['错']
 
-    # 表格格式（pipeline 输出）
+        # 表格格式: | Q1 | **E**（...）|  or  | 1 | E |
+        # 但跳过 pipeline 输出（列数 >= 6）
+        if line.count('|') < 6:
+            tm = re.match(r'\|\s*Q?(\d+)\s*\|\s*\*?\*?([A-E]+|对|错|正确|错误)\*?\*?', line)
+            if tm:
+                q = int(tm.group(1))
+                ans = tm.group(2).replace('正确','对').replace('错误','错')
+                if q not in answers:
+                    answers[q] = [ans]
+
+        # Gemini 格式: - **Q1 | 单选：E** or - **Q21 | 多选：A, B, C**
+        gm = re.match(r'-\s*\*\*Q(\d+)\s*\|\s*(?:单选|多选|判断)\s*[：:]\s*([A-E对错,\s]+)\*\*', line)
+        if gm:
+            q = int(gm.group(1))
+            ans_str = gm.group(2).replace('正确','对').replace('错误','错').replace(' ','').replace(',','')
+            ans = list(ans_str) if len(ans_str) > 1 else [ans_str]
+            if q not in answers:
+                answers[q] = ans
+
+        # 多选题: | Q21 | ABCDE |  or  Q21 | **A**、**B**、**C** |
+        mm = re.match(r'\|\s*Q?(\d+)\s*\|\s*\*?\*?([A-E]{2,5})\*?\*?', line)
+        if mm and not tm:  # Don't double-match single-letter answers
+            q = int(mm.group(1))
+            ans = list(mm.group(2))
+            if q not in answers:
+                answers[q] = ans
+        # 豆包 format: Q21 | ABCDE (no leading pipe) or | Q1 | E | ... |
+        dm = re.match(r'Q(\d+)\s*\|\s*([A-E]{1,5})\b', line)
+        if dm:
+            q = int(dm.group(1))
+            ans = list(dm.group(2)) if len(dm.group(2)) > 1 else [dm.group(2)]
+            if q not in answers:
+                answers[q] = ans
+        # 豆包 inline: | Q1 | E | 描述 |
+        dm2 = re.match(r'\|\s*Q(\d+)\s*\|\s*([A-E]+|对|错)\s*\|', line)
+        if dm2:
+            q = int(dm2.group(1))
+            ans = dm2.group(2).replace('正确','对').replace('错误','错')
+            if q not in answers:
+                answers[q] = [ans] if len(ans) == 1 else list(ans)
+
+    # 豆包 single-line format: all content on one line
+    if len(answers) < 10:  # Probably single-line format
+        # Split by | |  patterns
+        for part in re.split(r'\|\s*\|', text):
+            dm = re.search(r'Q(\d+)\s*\|\s*([A-E对错]+)', part)
+            if dm:
+                q = int(dm.group(1))
+                ans = dm.group(2).replace('正确','对').replace('错误','错')
+                if q not in answers:
+                    answers[q] = [ans] if len(ans) == 1 else list(ans)
+
+    # 管道表格格式
     for line in text.split('\n'):
         if '|' in line and line[0] == '|' and '---' not in line and '题号' not in line:
             parts = [p.strip() for p in line.split('|')]
@@ -55,15 +112,30 @@ def parse_md_answers(filepath):
             except ValueError:
                 continue
             if q in answers:
-                continue  # already parsed from [x] format
+                continue
             ans = parts[3]
             src = parts[5]
             ver = parts[7] if len(parts) > 7 else ''
-            answers[q] = {
-                'text': ans,
-                'source': src,
-                'verify': ver,
-            }
+            answers[q] = {'text': ans, 'source': src, 'verify': ver}
+
+    # Re-read for pipeline table format properly
+    if not answers or all(isinstance(v, list) and len(v) == 0 for v in answers.values()):
+        text2 = Path(filepath).read_text(encoding='utf-8')
+        for line in text2.split('\n'):
+            if '|' in line and line[0] == '|' and '---' not in line and '题号' not in line and '答案' not in line:
+                parts = [p.strip() for p in line.split('|')]
+                if len(parts) < 6:
+                    continue
+                try:
+                    q = int(parts[1])
+                except ValueError:
+                    continue
+                if q in answers and isinstance(answers[q], dict):
+                    continue
+                ans = parts[3]
+                src = parts[5] if len(parts) > 5 else ''
+                ver = parts[7] if len(parts) > 7 else ''
+                answers[q] = {'text': ans, 'source': src, 'verify': ver}
 
     return answers
 
@@ -101,7 +173,7 @@ def load_options(test_path):
             current_q = int(m.group(1))
             opts[current_q] = {}
         if current_q:
-            om = re.match(r'- \[[ x]\]\s*([A-D])\.\s*(.+)', line)
+            om = re.match(r'- \[[ x]\]\s*([A-E])\.\s*(.+)', line)
             if om:
                 opts[current_q][om.group(1)] = om.group(2).strip().strip('\"\'"「」')
     return opts
@@ -113,7 +185,7 @@ def normalize_vote(vote, qnum, options_map):
         return None
     opt_map = options_map.get(qnum, {})
     # 已经是纯字母
-    if re.match(r'^[A-D]+$', vote):
+    if re.match(r'^[A-E]+$', vote):
         return ''.join(sorted(vote))
     # 文字答案 → 匹配选项文本 → 字母（取最长匹配）
     # 去引号，避免 "爱国者" ≠ 爱国者
@@ -123,13 +195,18 @@ def normalize_vote(vote, qnum, options_map):
         clean_text = text.strip('\"\'“”「」。，、 ')
         if clean_text in clean_vote or clean_vote in clean_text:
             matches.append((len(clean_text), letter))
-        elif len(clean_text) >= 6 and clean_text[:6] in clean_vote:
-            matches.append((len(clean_text[:6]), letter))
+        elif len(clean_text) >= 8 and clean_text[:8] in clean_vote:
+            matches.append((len(clean_text[:8]), letter))
     if matches:
+        # 只取一个时用最长匹配；多个时全部保留（多选题选项长度差异大）
+        if len(matches) == 1:
+            return matches[0][1]
         matches.sort(reverse=True)
         best_len = matches[0][0]
-        letters = [m[1] for m in matches if m[0] >= best_len * 0.8]
-        return ''.join(sorted(letters))
+        # 如果最佳匹配远长于其他（>2x），只取最佳
+        if len(matches) > 1 and best_len > matches[1][0] * 2:
+            return matches[0][1]
+        return ''.join(sorted(m[1] for m in matches))
     # 判断题
     if '对' in vote or '正确' in vote:
         return '对'
@@ -168,11 +245,17 @@ def crosscheck(test_dir, config=None):
             sources['pipeline'] = parse_md_answers(str(pf))
             break
 
-    # AI 答案（可能在测试目录或 vault 根）
+    # AI 答案（可能在测试目录或 vault 根，支持 *1.md 变体）
     for name in ['DeepSeek', 'Gemini', '豆包']:
-        for loc in [test_path / f'{name}.md', vault_root / f'{name}.md']:
-            if loc.exists():
-                sources[name] = parse_md_answers(str(loc))
+        found = False
+        # *1.md 优先（新测试），然后 * .md（旧测试）
+        for variant in [f'{name}1.md', f'{name}.md']:
+            for loc in [test_path / variant, vault_root / variant]:
+                if loc.exists():
+                    sources[name] = parse_md_answers(str(loc))
+                    found = True
+                    break
+            if found:
                 break
 
     # 本地题库
@@ -203,8 +286,9 @@ def crosscheck(test_dir, config=None):
     test_name = test_path.name
     lines = []
     lines.append(f"# {test_name} 终版答案\n")
-    lines.append(f"> 六源交叉验证：pipeline(题库+课本) + 本地题库 + DeepSeek + Gemini + 豆包\n")
-    lines.append(f"> 🟢=高置信 🟡=可信 🔴=需人工确认\n")
+    lines.append(f"> 六源交叉验证：itihey题库 + DeepSeek + Gemini + 豆包\n")
+    lines.append(f"> 🟢 全票通过 | 🟡 题库/AI分歧(AI一致则采用AI) | 🔴 各方不一需人工\n")
+    lines.append(f"> ⚠️ 本地题库(wby/课本)仅做兜底验证，不作为答案依据\n")
     lines.append("")
     lines.append("## 速查表\n")
     lines.append("| 题号 | 答案 | 置信 | 判定 | 来源 |")
@@ -243,38 +327,74 @@ def crosscheck(test_dir, config=None):
             if most[1] >= 2:
                 ai_consensus = most[0]
 
-        # 判定
+        # 判定（新规则）
+        # 🟢 题库 + 3AI 全票通过
+        # 🟡 题库 vs AI 不一致，但 AI 内部一致 → AI共识
+        # 🔴 各方均不一致 → 人工确认
         answer = None
         conf = 0
         judge = ''
         detail = ''
 
+        # 检测 pipeline 答案是否匹配选项
+        pl_valid = pipeline_vote and (
+            re.match(r'^[A-E]+$', pipeline_vote)
+            or len(pipeline_vote) <= 5
+        )
+
         if pipeline_vote and ai_consensus and pipeline_vote == ai_consensus:
+            # 🟢 题库+AI全票
             answer = pipeline_vote
             conf = 0.98
             judge = '🟢'
-            detail = f"题库+AI全票通过。pipeline={pipeline_vote}，AI一致={ai_consensus}"
+            detail = f"全票通过：题库={pipeline_vote}，AI一致={ai_consensus}"
+
         elif pipeline_vote and ai_consensus and pipeline_vote != ai_consensus:
-            answer = pipeline_vote
-            conf = 0.90
-            judge = '🟡'
-            detail = f"题库={pipeline_vote}，AI={ai_consensus}。信题库（不受文字陷阱影响）"
-        elif pipeline_vote:
-            answer = pipeline_vote
+            # 题库 与 AI 一致 不一致，但 AI 内部一致 → 🟡 采用 AI 共识
+            answer = ai_consensus
             conf = 0.85
             judge = '🟡'
-            detail = f"仅题库命中。pipeline={pipeline_vote}"
+            detail = f"题库={pipeline_vote}，但AI一致={ai_consensus}。采用AI共识"
+
+        elif pipeline_vote and len(ai_values) >= 2:
+            # AI 内部不一致，用大多数
+            cnt = Counter(ai_values)
+            top = cnt.most_common()
+            if top[0][1] >= 2:
+                # AI 大多数一致，但题库不同
+                answer = top[0][0]
+                conf = 0.70
+                judge = '🔴'
+                detail = f"题库={pipeline_vote}，AI分歧({', '.join(f'{k}={v}' for k,v in ai_votes.items())})"
+            else:
+                answer = pipeline_vote
+                conf = 0.60
+                judge = '🔴'
+                detail = f"各方均不一致。题库={pipeline_vote}，AI分歧({', '.join(f'{k}={v}' for k,v in ai_votes.items())})"
+
+        elif pipeline_vote:
+            # 仅题库命中，无 AI 覆盖
+            answer = pipeline_vote
+            conf = 0.80
+            judge = '🟡'
+            detail = f"仅题库命中：{pipeline_vote}"
+
         elif ai_consensus and len(ai_values) >= 2:
+            # AI 共识，无题库
             answer = ai_consensus
             conf = 0.80
             judge = '🟡'
             detail = f"AI共识（{'/'.join(ai_votes.keys())}一致={ai_consensus}），无题库覆盖"
+
         elif len(ai_values) >= 1:
-            # AI 分歧
-            answer = max(ai_values, key=ai_values.count) if ai_values else list(ai_values)[0]
+            # AI 分歧，无题库
+            cnt = Counter(ai_values)
+            top = cnt.most_common()
+            answer = top[0][0] if top else list(ai_values)[0]
             conf = 0.50
             judge = '🔴'
-            detail = f"AI分歧: {', '.join(f'{k}={v}' for k,v in ai_votes.items())}，需人工确认"
+            detail = f"无题库，AI分歧({', '.join(f'{k}={v}' for k,v in ai_votes.items())})"
+
         else:
             answer = '?'
             conf = 0
@@ -289,7 +409,8 @@ def crosscheck(test_dir, config=None):
                 break
 
         source_label = f"题库({len(votes)}源)" if pipeline_vote else f"AI({len(ai_votes)}源)"
-        lines.append(f"| {q} | {answer} | {conf:.0%} | {judge} | {source_label} |")
+        qlink = f"[[题目校对#Q{q}|Q{q}]]"
+        lines.append(f"| {qlink} | {answer} | {conf:.0%} | {judge} | {source_label} |")
 
         details.append(f"### Q{q}\n")
         details.append(f"**答案**: {answer} | **置信**: {conf:.0%} | **判定**: {judge}\n")
