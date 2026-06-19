@@ -52,7 +52,7 @@
 ## API 信息
 
 - 接口：POST https://platform.itihey.com/v1/search
-- 认证：x-api-key: itk_56bdc146d6f6afb0a38959868fc75c728e20bd05b554ea8a
+- 认证：x-api-key: <YOUR_ITIHEY_KEY>
 - 类型：0=单选 1=多选 3=判断
 
 ## 千问 VL
