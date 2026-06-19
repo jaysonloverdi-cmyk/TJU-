@@ -176,10 +176,11 @@ def load_options(test_path):
         if current_q:
             # 提取题干（标题下一行）
             if not qtexts.get(current_q) and line.strip() and not line.startswith('-') and not line.startswith('>') and not line.startswith('#'):
-                qtexts[current_q] = line.strip()
+                qtexts[current_q] = re.sub(r'\s*\^Q\d+', '', line.strip())
             om = re.match(r'- \[[ x]\]\s*([A-E])\.\s*(.+)', line)
             if om:
-                opts[current_q][om.group(1)] = om.group(2).strip().strip('\"\'"「」')
+                val = re.sub(r'\s*\^Q\d+', '', om.group(2)).strip().strip('\"\'"「」')
+                opts[current_q][om.group(1)] = val
     return opts, qtexts
 
 
@@ -277,7 +278,8 @@ def crosscheck(test_dir, config=None):
     options_map, question_texts = load_options(test_path)
 
     # 本地资源路径
-    wf_root = test_path.parent if test_path.name != '工作流' else test_path
+    # 工作流目录在测试目录的../../工作流
+    wf_root = Path(__file__).resolve().parent.parent  # core/.. = 工作流
     bank_path = wf_root / 'wby题库.md'
     textbook_path = wf_root / '考试参考.md'
 
@@ -406,28 +408,29 @@ def crosscheck(test_dir, config=None):
             judge = '🔴'
             detail = "无有效答案源"
 
-        # 查本地题库（wby + 课本）：仅作为参考标注
+        # 查本地题库（wby + 课本）：仅 🟡/🔴 时参考
         local_refs = []
-        if bank_path and bank_path.exists():
+        textbook_refs = []
+        if judge != '🟢' and bank_path and bank_path.exists():
             bank_text_local = bank_path.read_text(encoding='utf-8')
             q_kws = re.findall(r'[一-鿿]{3,8}', question_texts.get(q, ''))
             for kw in q_kws[:5]:
                 for line in bank_text_local.split('\n'):
                     if kw in line and line.strip().startswith('*'):
                         bold = re.findall(r'\*\*(.+?)\*\*', line)
-                        if bold and line.strip() not in local_refs:
-                            local_refs.append(line.strip().lstrip('* '))
+                        stripped = line.strip().lstrip('* ')
+                        if bold and stripped not in local_refs:
+                            local_refs.append(stripped)
                             break
-        textbook_refs = []
-        if textbook_path and textbook_path.exists():
-            tb_text = textbook_path.read_text(encoding='utf-8')
-            for kw in q_kws[:3]:
-                idx = tb_text.find(kw)
-                if idx > 0:
-                    snippet = tb_text[max(0,idx-20):idx+100].replace('\n',' ')
-                    if len(snippet) > 20:
-                        textbook_refs.append(snippet[:120])
-                        break
+            if textbook_path and textbook_path.exists():
+                tb_text = textbook_path.read_text(encoding='utf-8')
+                for kw in q_kws[:3]:
+                    idx = tb_text.find(kw)
+                    if idx > 0:
+                        snippet = tb_text[max(0,idx-20):idx+100].replace('\n',' ')
+                        if len(snippet) > 20 and snippet not in textbook_refs:
+                            textbook_refs.append(snippet[:120])
+                            break
 
         source_label = f"题库({len(votes)}源)" if pipeline_vote else f"AI({len(ai_votes)}源)"
         qlink = "[[题目校对#Q" + str(q) + "\\|Q" + str(q) + "]]"
