@@ -30,6 +30,18 @@ def parse_md_answers(filepath):
     4. - **Q1 | 单选：E** Gemini 格式
     """
     text = Path(filepath).read_text(encoding='utf-8')
+
+    # 预处理：豆包粘贴常压成单行，先拆分
+    if '\n' not in text.strip()[:500] or text.count('\n') < 10:
+        # 在 ### Q 或 **Q 前插入换行
+        text = re.sub(r'(?=### Q\d|\*\*Q\d+)', '\n', text)
+    # 压缩多余空行
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    # 统一 bold 标记
+    text = text.replace('**', '**')
+    # 清理行尾空格
+    text = '\n'.join(l.rstrip() for l in text.split('\n'))
+
     answers = {}
     current_q = None
 
@@ -478,9 +490,8 @@ def crosscheck(test_dir, config=None):
                             break
 
         source_label = f"题库({len(votes)}源)" if pipeline_vote else f"AI({len(ai_votes)}源)"
-        # vault 内相对路径 (as_posix 去掉盘符)
         rel_path = test_path.as_posix().replace('D:/Documents/25262/', '')
-        qlink = "[[" + rel_path + "/题目校对#Q" + str(q) + "\\|Q" + str(q) + "]]"
+        qlink = "[[" + rel_path + "/题目校对#Q" + str(q) + "]]"
         dlink = "[[#Q" + str(q) + "-detail\\|说明]]"
         lines.append(f"| {qlink} | {answer} | {conf:.0%} | {judge} | {source_label} | ← | {dlink} |")
 
