@@ -72,6 +72,11 @@ def verify_answer(question, result, fallback_result=None):
         status = "⚠️"
         reasons.append(result.get("_mismatch_detail", "题库疑似匹配到其他题"))
 
+    # 4.6 否定词检测：标记供 crosscheck 使用，不单独标 ⚠️
+    negation_words = ['不是', '不属于', '不包括', '错误的是', '不正确的是', '不正确是']
+    if any(w in question.get("qtext", "") for w in negation_words):
+        result["_has_negation"] = True
+
     # 5. 长答案检测（可能是解释而非直接答案）
     if ans_strings:
         first_ans = ans_strings[0].strip()

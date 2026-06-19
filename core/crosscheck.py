@@ -166,6 +166,7 @@ def load_options(test_path):
         return {}
     text = review.read_text(encoding='utf-8')
     opts = {}
+    qtexts = {}
     current_q = None
     for line in text.split('\n'):
         m = re.search(r'### Q(\d+)', line)
@@ -173,10 +174,13 @@ def load_options(test_path):
             current_q = int(m.group(1))
             opts[current_q] = {}
         if current_q:
+            # 提取题干（标题下一行）
+            if not qtexts.get(current_q) and line.strip() and not line.startswith('-') and not line.startswith('>') and not line.startswith('#'):
+                qtexts[current_q] = line.strip()
             om = re.match(r'- \[[ x]\]\s*([A-E])\.\s*(.+)', line)
             if om:
                 opts[current_q][om.group(1)] = om.group(2).strip().strip('\"\'"「」')
-    return opts
+    return opts, qtexts
 
 
 def normalize_vote(vote, qnum, options_map):
@@ -270,7 +274,7 @@ def crosscheck(test_dir, config=None):
                         bank_answers[clean[:30]] = bolds
 
     # 2. 加载选项映射
-    options_map = load_options(test_path)
+    options_map, question_texts = load_options(test_path)
 
     # 3. 逐题判定
     all_qs = set()
@@ -411,6 +415,12 @@ def crosscheck(test_dir, config=None):
             details.append(f"> AI投票: " + " | ".join(f"{k}={v}" for k, v in sorted(ai_votes.items())) + "\n")
         if pipeline_vote:
             details.append(f"> Pipeline: {pipeline_vote}\n")
+        # 否定题分歧检测
+        qtext = question_texts.get(q, '')
+        negation_words = ['不是', '不属于', '不包括', '错误的是', '不正确的是', '不正确是']
+        if any(w in qtext for w in negation_words) and pipeline_vote and ai_consensus and pipeline_vote != ai_consensus:
+            judge = '🔴' if judge == '🟡' else judge
+            details.append(f"> ⚠️ **否定题分歧**：题库与AI答案不同——题目含\"{'/'.join(w for w in negation_words if w in qtext)}\"，API可能答了反问题。请确认。\n")
         # 本地题库兜底验证（仅在 itihey 和 AI 均无答案时显示）
         if not pipeline_vote and len(ai_values) < 2:
             # TODO: 实现本地题库搜索
