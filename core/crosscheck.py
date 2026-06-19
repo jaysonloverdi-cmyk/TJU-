@@ -198,15 +198,11 @@ def normalize_vote(vote, qnum, options_map):
         elif len(clean_text) >= 8 and clean_text[:8] in clean_vote:
             matches.append((len(clean_text[:8]), letter))
     if matches:
-        # 只取一个时用最长匹配；多个时全部保留（多选题选项长度差异大）
-        if len(matches) == 1:
-            return matches[0][1]
+        # 取最长匹配作为基准，保留 >= 50% 长度的所有匹配
         matches.sort(reverse=True)
         best_len = matches[0][0]
-        # 如果最佳匹配远长于其他（>2x），只取最佳
-        if len(matches) > 1 and best_len > matches[1][0] * 2:
-            return matches[0][1]
-        return ''.join(sorted(m[1] for m in matches))
+        letters = [m[1] for m in matches if m[0] >= best_len * 0.4 or m[0] >= 2]
+        return ''.join(sorted(letters))
     # 判断题
     if '对' in vote or '正确' in vote:
         return '对'
@@ -291,8 +287,8 @@ def crosscheck(test_dir, config=None):
     lines.append(f"> ⚠️ 本地题库(wby/课本)仅做兜底验证，不作为答案依据\n")
     lines.append("")
     lines.append("## 速查表\n")
-    lines.append("| 题号 | 答案 | 置信 | 判定 | 来源 |")
-    lines.append("| --- | --- | --- | --- | --- |")
+    lines.append("| 题号 | 答案 | 置信 | 判定 | 来源 | 原题 | 解析 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
 
     details = []
     details.append("\n## 逐题说明\n")
@@ -405,9 +401,10 @@ def crosscheck(test_dir, config=None):
 
         source_label = f"题库({len(votes)}源)" if pipeline_vote else f"AI({len(ai_votes)}源)"
         qlink = "[[题目校对#^Q" + str(q) + "\\|Q" + str(q) + "]]"
-        lines.append(f"| {qlink} | {answer} | {conf:.0%} | {judge} | {source_label} |")
+        dlink = "[[#Q" + str(q) + "-detail\\|说明]]"
+        lines.append(f"| {qlink} | {answer} | {conf:.0%} | {judge} | {source_label} | ← | {dlink} |")
 
-        details.append(f"### Q{q}\n")
+        details.append(f"### Q{q}-detail\n")
         details.append(f"**答案**: {answer} | **置信**: {conf:.0%} | **判定**: {judge}\n")
         details.append(f"> {detail}\n")
         if ai_votes:
