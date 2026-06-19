@@ -1,73 +1,54 @@
-# 军理搜题工作流
+# 军理搜题工作流 v3
 
-> 基于 itihey API 的批量搜题 + 自动答案生成系统
+> 千问VL识图 → 六源交叉验证 → 考场终版答案
+
+## 工作流
+
+```
+图片 → 千问VL识别题号 → 校对稿 → 你校对+贴AI
+                                        ↓
+                                pipeline API搜题
+                                        ↓
+                    crosscheck 六源(itihey+DS+GM+DB+wby+课本)
+                                        ↓
+                                  终版答案(🟢🟡🔴)
+```
 
 ## 快速开始
 
 ```bash
-# 1. 安装依赖
-pip install requests easyocr pillow pyyaml
+pip install requests pillow pyyaml
 
-# 2. 配置
 cp config.example.yaml config.yaml
-# 编辑 config.yaml，填入 itihey API Key
+# 编辑 config.yaml，填入 itihey API Key + DashScope Key
 
-# 3. 准备题目（两种方式）
-# 方式 A：图片 → OCR 自动提取
-python -m core.main config.yaml 测试1 --images 测试1/
+# 跑 pipeline
+python -m core.main config.yaml 测试N --questions temp/_reviewed_测试N.json
 
-# 方式 B：JSON 题目文件
-python -m core.main config.yaml 测试1 --questions questions.json
-
-# 单题快速查询
-python itihey_search.py "克劳塞维茨是哪个国家的军事思想家？" "普鲁士|英国|法国" 0
+# 交叉验证
+python -m core.crosscheck 测试N
 ```
 
-## JSON 题目格式
-
-```json
-[
-  {"q": "题目文本", "opts": "选项A|选项B|选项C", "type": 0},
-  {"q": "判断题干", "opts": "对|错", "type": 3}
-]
-```
-
-type: `0`=单选 `1`=多选 `2`=填空 `3`=判断 `4`=简答
-
-## 模块架构
+## 模块
 
 ```
 core/
-├── search.py      # API 搜索 + SQLite 缓存 + 多轮降级 + 答案清洗
-├── ocr.py         # EasyOCR 多 pass 提取 + 课本词库纠错
-├── fallback.py    # 课本关键词搜索 + 本地题库搜索
-├── verify.py      # 跨来源核验（✅⚠️❌ 三态）
-├── output.py      # Markdown 表格生成 + 统计
-└── main.py        # 主流程编排
-config.yaml        # 配置文件（换课只需改此文件）
-itihey_search.py   # 单题 CLI 入口（向后兼容）
-vision.js           # 千问 VL 视觉识别（辅助 OCR）
+├── search.py       # API搜索 + 多轮降级 + 匹错检测
+├── crosscheck.py    # 六源交叉验证 + 三色判定
+├── verify.py        # 核验(否定题/匹错/长答案)
+├── output.py        # Markdown输出
+├── fallback.py      # 本地题库/课本兜底
+└── main.py          # 主流程
+vision.js             # 千问VL识图
+itihey_search.py     # 单题CLI
 ```
 
-## 搜题策略
+## 判定
 
-1. **API 多轮降级搜索**
-   - 完整题 + 选项 → 搜
-   - 搜不到 → 去下划线/标点 → 再搜
-   - 还搜不到 → 去选项搜 → 再搜
-   - 选项关键词反搜
+| 🟢 | 题库+3AI全票 | 98% |
+| 🟡 | 题库vs AI不一致，AI内部一致 | 85% |
+| 🔴 | 各方不一致 | 60% |
 
-2. **课本兜底**（API 未命中时）
-   - 关键词匹配 + 上下文提取
+## 重要
 
-3. **本地题库兜底**
-   - 文本相似度匹配
-
-4. **自动核验**
-   - 答案是否匹配选项
-   - 答案长度是否异常
-   - ⚠️ 标记需人工确认的题目
-
-## 重要提示
-
-⚠️ "题库"标签 = API 声称命中，未经人工验证。⚠️ 标记的题目请人工确认。
+⚠️ "题库" = API声称命中，非100%可靠。🟡🔴题需人工确认。
