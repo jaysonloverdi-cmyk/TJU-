@@ -197,21 +197,25 @@ def _search_text_bank(question, content, context_lines):
                 }
 
     if best_match and best_score >= 1:
-        # 从上下文中提取答案
-        # 常见模式：答案是：X / 答案为：X / answer: X / 选 X
         ctx = best_match["context"]
+        # 1. 提取 Markdown 加粗内容（wby题库.md 格式）
+        bold = re.findall(r'\*\*(.+?)\*\*', ctx)
+        # 2. 常见答案模式
         answer_patterns = [
             r'答案[是为：:]\s*(.+?)(?:\n|$)',
             r'正确答[案项][是为：:]\s*(.+?)(?:\n|$)',
-            r'answer[：:]\s*(.+?)(?:\n|$)',
             r'[（(]\s*([A-E]+)\s*[）)]',
         ]
         answer = None
-        for pat in answer_patterns:
-            m = re.search(pat, ctx, re.IGNORECASE)
-            if m:
-                answer = m.group(1).strip()
-                break
+        if bold:
+            # 最长的加粗项最可能是答案
+            answer = max(bold, key=len)
+        if not answer:
+            for pat in answer_patterns:
+                m = re.search(pat, ctx, re.IGNORECASE)
+                if m:
+                    answer = m.group(1).strip()
+                    break
 
         return {
             "answer": answer or "(见上下文)",
@@ -219,7 +223,7 @@ def _search_text_bank(question, content, context_lines):
             "detail": ctx.strip(),
             "line": best_match["line"],
             "keyword": best_match["matched_keyword"],
-            "confidence": 0.85 if answer else 0.70,
+            "confidence": 0.88 if answer else 0.70,
         }
 
     return None
