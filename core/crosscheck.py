@@ -35,7 +35,7 @@ def parse_md_answers(filepath):
 
     for line in text.split('\n'):
         # [x] 格式
-        m = re.match(r'### Q(\d+)', line)
+        m = re.search(r'### Q(\d+)', line)
         if m:
             current_q = int(m.group(1))
             answers[current_q] = []
@@ -168,7 +168,7 @@ def load_options(test_path):
     opts = {}
     current_q = None
     for line in text.split('\n'):
-        m = re.match(r'### Q(\d+)', line)
+        m = re.search(r'### Q(\d+)', line)
         if m:
             current_q = int(m.group(1))
             opts[current_q] = {}
